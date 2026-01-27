@@ -7,6 +7,15 @@ const DEV_LOGGING = true;
 
 // Utils module path for hot-reloading
 const UTILS_PATH = path.join(__dirname, 'utils.js');
+const CLAUDE_DETECTION_PATH = path.join(__dirname, 'claude-detection.js');
+
+// Helper to get fresh claude detection module (supports hot-reload)
+const getClaudeDetection = () => {
+  if (DEV_LOGGING) {
+    delete require.cache[require.resolve(CLAUDE_DETECTION_PATH)];
+  }
+  return require(CLAUDE_DETECTION_PATH);
+};
 
 // Helper to get fresh utils (supports hot-reload)
 const getUtils = () => {
@@ -45,6 +54,10 @@ const defaultConfig = {
   activityTimeout: 3000, // ms to show activity indicator
   opacity: 0.9,
   opacityHover: 1,
+  // Activity detection options
+  enableClaudeDetection: true,   // Auto-detect Claude Code sessions
+  claudeIdleTimeout: 5000,       // ms before working -> waiting transition
+  showActivityGlyph: true,       // Show activity glyph (dot/icon)
   // Theme colors - if not set, will be derived from Hyper's theme
   theme: {
     // These will be populated from Hyper config if not overridden
@@ -240,6 +253,9 @@ const extractCwd = (data) => {
 const parseTerminalOutput = (uid, data) => {
   if (!sessions[uid]) return;
 
+  const now = Date.now();
+  const session = sessions[uid];
+
   // Only log meaningful output (skip single characters which are typically keystrokes)
   if (data.length > 5) {
     const preview = data.substring(0, 150).replace(/[\r\n]/g, '\\n').replace(/\x1b/g, '<ESC>');
@@ -247,23 +263,87 @@ const parseTerminalOutput = (uid, data) => {
   }
 
   // Store last output chunk for debugging/future pattern matching
-  sessions[uid].lastOutput = data;
+  session.lastOutput = data;
+
+  // =========================================================================
+  // ACTIVITY DETECTION - Track output patterns to determine activity type
+  // =========================================================================
+
+  // Calculate time since last output for intensity tracking
+  const timeSinceLastOutput = session.lastOutputTime ? now - session.lastOutputTime : Infinity;
+
+  // Determine activity type based on output characteristics
+  if (data.length > 5) {
+    // Significant output (not just single keystrokes)
+
+    // Track burst rate for intensity calculation
+    if (timeSinceLastOutput < 100) {
+      // Rapid output (< 100ms apart) = likely command running
+      session.outputBurstCount = Math.min((session.outputBurstCount || 0) + 1, 100);
+      session.activityType = 'command';
+      session.activityIntensity = Math.min(session.outputBurstCount * 5, 100);
+    } else if (timeSinceLastOutput < 1000) {
+      // Normal output rate
+      session.outputBurstCount = Math.max((session.outputBurstCount || 0) - 1, 0);
+      session.activityType = 'output';
+      session.activityIntensity = Math.max(30, session.activityIntensity - 5);
+    } else {
+      // Fresh output after pause
+      session.outputBurstCount = 1;
+      session.activityType = 'output';
+      session.activityIntensity = 30;
+    }
+
+    session.lastOutputTime = now;
+
+    // Mark activity for non-active sessions
+    if (uid !== activeUid) {
+      markActivity(uid);
+    }
+  } else if (data.length > 0 && data.length <= 5) {
+    // Single characters - likely user typing
+    session.activityType = 'typing';
+    session.activityIntensity = Math.max(10, (session.activityIntensity || 0) - 2);
+  }
+
+  // =========================================================================
+  // CWD DETECTION
+  // =========================================================================
 
   // Try to extract CWD using pattern matching
   const result = extractCwd(data);
-  if (result && result.path && result.path !== sessions[uid].cwd) {
+  if (result && result.path && result.path !== session.cwd) {
     log(`CWD detected [${result.patternName}]:`, result.path);
-    sessions[uid].cwd = result.path;
+    session.cwd = result.path;
     getGitInfo(uid, result.path);
-    return;
   }
 
-  // Activity detection - store patterns for future use
-  // Claude Code detection
-  if (/claude[- ]?code|anthropic/i.test(data)) {
-    sessions[uid].detectedActivity = 'claude-code';
-    sessions[uid].activityTime = Date.now();
-    log('Activity detected: claude-code');
+  // =========================================================================
+  // CLAUDE CODE DETECTION
+  // =========================================================================
+
+  if (pluginConfig.enableClaudeDetection !== false) {
+    const claudeDetection = getClaudeDetection();
+
+    // Update Claude detection state
+    const wasUpdated = claudeDetection.updateClaudeDetection(session, data, now);
+
+    if (wasUpdated && session.claudeDetected) {
+      log('Claude state:', {
+        uid: uid.substring(0, 8),
+        state: session.claudeState,
+        spinnerPhase: session.claudeSpinnerPhase
+      });
+    }
+
+    // Also check for legacy claude-code detection pattern
+    if (!session.claudeDetected && /claude[- ]?code|anthropic/i.test(data)) {
+      session.detectedActivity = 'claude-code';
+      session.claudeDetected = true;
+      session.claudeState = 'idle';
+      session.claudeLastActivity = now;
+      log('Activity detected: claude-code (legacy pattern)');
+    }
   }
 };
 
@@ -317,13 +397,40 @@ const markActivity = (uid) => {
   sessions[uid].activityTime = Date.now();
 };
 
-// Clear old activity indicators
+// Clear old activity indicators and decay intensity
 const clearOldActivity = () => {
   const now = Date.now();
   Object.keys(sessions).forEach((uid) => {
-    if (sessions[uid].hasActivity && sessions[uid].activityTime) {
-      if (now - sessions[uid].activityTime > pluginConfig.activityTimeout) {
-        sessions[uid].hasActivity = false;
+    const session = sessions[uid];
+
+    // Clear hasActivity flag after timeout
+    if (session.hasActivity && session.activityTime) {
+      if (now - session.activityTime > pluginConfig.activityTimeout) {
+        session.hasActivity = false;
+      }
+    }
+
+    // Decay activity intensity over time
+    const timeSinceOutput = session.lastOutputTime ? now - session.lastOutputTime : Infinity;
+    if (timeSinceOutput > 2000) {
+      // No output for 2+ seconds - decay intensity
+      session.activityIntensity = Math.max(0, (session.activityIntensity || 0) - 10);
+      session.outputBurstCount = Math.max(0, (session.outputBurstCount || 0) - 5);
+
+      if (session.activityIntensity === 0 && session.activityType !== 'idle') {
+        session.activityType = 'idle';
+      }
+    }
+
+    // Handle Claude state transitions (working -> waiting after idle timeout)
+    if (session.claudeDetected && session.claudeState === 'working') {
+      const claudeIdleTimeout = pluginConfig.claudeIdleTimeout || 5000;
+      const timeSinceClaudeActivity = session.claudeLastActivity ? now - session.claudeLastActivity : Infinity;
+
+      if (timeSinceClaudeActivity > claudeIdleTimeout) {
+        session.claudeState = 'waiting';
+        session.claudeLastStateChange = now;
+        log('Claude state transition: working -> waiting (idle timeout)', { uid: uid.substring(0, 8) });
       }
     }
   });
@@ -489,6 +596,89 @@ const generateCSS = (config) => {
   @keyframes dot-pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.4; }
+  }
+
+  /* ═══════════════════════════════════════════════════════════════
+     ACTIVITY GLYPHS - Visual indicators for session state
+     ═══════════════════════════════════════════════════════════════ */
+
+  /* Base glyph styles - colored dot for standard terminals */
+  .activity-glyph {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-left: auto;
+  }
+
+  /* Standard terminal states */
+  .activity-glyph.running {
+    background: ${t.green};
+    animation: glyph-pulse 1s ease-in-out infinite;
+    box-shadow: 0 0 4px ${t.green}80;
+  }
+  .activity-glyph.has-output {
+    background: ${t.cyan};
+    animation: glyph-fade 2s ease-out;
+  }
+  .activity-glyph.inactive {
+    background: ${t.overlay};
+    opacity: 0.4;
+  }
+
+  /* Claude glyph - uses icon instead of dot */
+  .activity-glyph.claude {
+    width: auto;
+    height: auto;
+    background: none !important;
+    font-size: 12px;
+    line-height: 1;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .activity-glyph.claude.working {
+    color: ${t.green};
+    animation: glyph-pulse 1s ease-in-out infinite;
+    text-shadow: 0 0 6px ${t.green}80;
+  }
+  .activity-glyph.claude.thinking {
+    color: ${t.magenta};
+    animation: glyph-pulse-slow 2s ease-in-out infinite;
+    text-shadow: 0 0 6px ${t.magenta}60;
+  }
+  .activity-glyph.claude.waiting {
+    color: ${t.yellow};
+    text-shadow: 0 0 4px ${t.yellow}40;
+  }
+  .activity-glyph.claude.idle {
+    color: ${t.overlay};
+    opacity: 0.5;
+  }
+
+  /* Glyph animations */
+  @keyframes glyph-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.6; transform: scale(0.9); }
+  }
+  @keyframes glyph-pulse-slow {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.85); }
+  }
+  @keyframes glyph-fade {
+    0% { opacity: 1; }
+    100% { opacity: 0.5; }
+  }
+
+  /* Activity intensity bar (optional) */
+  .activity-intensity-bar {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    height: 2px;
+    background: linear-gradient(90deg, ${t.green}, ${t.cyan});
+    border-radius: 0 0 0 6px;
+    transition: width 0.3s ease;
+    opacity: 0.7;
   }
 
   /* Session Details */
@@ -790,7 +980,18 @@ exports.middleware = (store) => {
         hasActivity: false,
         activityTime: null,
         lastOutput: '',
-        detectedActivity: null
+        detectedActivity: null,
+        // Activity tracking fields
+        activityType: 'idle',        // 'idle' | 'output' | 'typing' | 'command'
+        activityIntensity: 0,        // 0-100 for visual intensity
+        lastOutputTime: null,
+        outputBurstCount: 0,
+        // Claude Code detection fields
+        claudeDetected: false,
+        claudeState: null,           // 'working' | 'thinking' | 'waiting' | 'idle'
+        claudeSpinnerPhase: null,
+        claudeLastActivity: null,
+        claudeLastStateChange: null,
       };
       getCwd(action.uid, action.pid);
       break;
@@ -831,7 +1032,18 @@ exports.middleware = (store) => {
             hasActivity: false,
             activityTime: null,
             lastOutput: '',
-            detectedActivity: null
+            detectedActivity: null,
+            // Activity tracking fields
+            activityType: 'idle',
+            activityIntensity: 0,
+            lastOutputTime: null,
+            outputBurstCount: 0,
+            // Claude Code detection fields
+            claudeDetected: false,
+            claudeState: null,
+            claudeSpinnerPhase: null,
+            claudeLastActivity: null,
+            claudeLastStateChange: null,
           };
         }
 
@@ -996,7 +1208,20 @@ exports.decorateHyper = (Hyper, { React }) => {
                 cwd: '',
                 git: { branch: '', dirty: 0 },
                 hasActivity: false,
-                activityTime: null
+                activityTime: null,
+                lastOutput: '',
+                detectedActivity: null,
+                // Activity tracking fields
+                activityType: 'idle',
+                activityIntensity: 0,
+                lastOutputTime: null,
+                outputBurstCount: 0,
+                // Claude Code detection fields
+                claudeDetected: false,
+                claudeState: null,
+                claudeSpinnerPhase: null,
+                claudeLastActivity: null,
+                claudeLastStateChange: null,
               };
               getCwd(uid, storeSession.pid);
             } else {
@@ -1053,6 +1278,14 @@ exports.decorateHyper = (Hyper, { React }) => {
         log('Utils cache cleared successfully');
       } catch (e) {
         log('Error clearing utils cache:', e.message);
+      }
+
+      // Clear claude detection cache for hot-reload
+      try {
+        delete require.cache[require.resolve(CLAUDE_DETECTION_PATH)];
+        log('Claude detection cache cleared successfully');
+      } catch (e) {
+        log('Error clearing claude detection cache:', e.message);
       }
 
       // Deep clone sessions to ensure React sees it as new data
@@ -1146,6 +1379,7 @@ exports.decorateHyper = (Hyper, { React }) => {
           shortenPath: (p) => p || '',
           getShellInfo: () => ({ icon: '\uf489', color: '#89b4fa' }),
           extractPathFromTitle: (t) => t || '',
+          getActivityGlyph: () => ({ icon: null, className: 'activity-glyph inactive', title: 'Inactive', style: {} }),
         };
       }
       const isActive = uid === this.state.activeUid;
@@ -1157,9 +1391,22 @@ exports.decorateHyper = (Hyper, { React }) => {
       const shortCwd = utils.shortenPath(effectiveCwd);
       const shellInfo = utils.getShellInfo(data);
 
+      // Get activity glyph info (dot for standard, icon for Claude)
+      const activityGlyph = utils.getActivityGlyph ? utils.getActivityGlyph(data) : null;
+      const showActivityGlyph = pluginConfig.showActivityGlyph !== false;
+
+      // Determine status text based on activity type and Claude state
+      let statusText = isActive ? 'active' : 'idle';
+      if (data.claudeDetected && data.claudeState) {
+        statusText = `Claude: ${data.claudeState}`;
+      } else if (data.activityType && data.activityType !== 'idle') {
+        statusText = data.activityType;
+      }
+
       let className = 'session-item';
       if (isActive) className += ' active';
       if (hasActivity) className += ' has-activity';
+      if (data.claudeDetected) className += ' claude-session';
 
       // Build session card with new structure
       return React.createElement(
@@ -1169,7 +1416,7 @@ exports.decorateHyper = (Hyper, { React }) => {
           className: className,
           onClick: () => this.handleSessionClick(uid)
         },
-        // Header row: Icon + Name + Activity + Index
+        // Header row: Icon + Name + Activity Glyph + Index
         React.createElement(
           'div',
           { className: 'session-header-row' },
@@ -1181,7 +1428,18 @@ exports.decorateHyper = (Hyper, { React }) => {
             'div',
             { className: 'session-title' },
             React.createElement('span', { className: 'session-process-name' }, processName),
-            hasActivity && React.createElement('span', { className: 'session-activity-dot' })
+            // Legacy activity dot for backward compatibility
+            hasActivity && !showActivityGlyph && React.createElement('span', { className: 'session-activity-dot' }),
+            // New activity glyph
+            showActivityGlyph && activityGlyph && React.createElement(
+              'span',
+              {
+                className: activityGlyph.className,
+                style: activityGlyph.style,
+                title: activityGlyph.title
+              },
+              activityGlyph.icon  // null for dots (CSS renders them), icon text for Claude
+            )
           ),
           React.createElement('span', { className: 'session-index' }, index + 1)
         ),
@@ -1216,7 +1474,7 @@ exports.decorateHyper = (Hyper, { React }) => {
                 )
               : React.createElement('span', { style: { color: '#585b70', fontStyle: 'italic' } }, 'no repo')
           ),
-          // Status bar with PID
+          // Status bar with PID and activity status
           React.createElement(
             'div',
             { className: 'session-status-bar' },
@@ -1224,11 +1482,16 @@ exports.decorateHyper = (Hyper, { React }) => {
               'span',
               { className: 'session-timestamp' },
               '\uf4bc ',
-              isActive ? 'active' : 'idle'
+              statusText
             ),
             React.createElement('span', { className: 'session-pid' }, `PID ${data.pid}`)
           )
-        )
+        ),
+        // Activity intensity bar (for active sessions)
+        data.activityIntensity > 0 && React.createElement('div', {
+          className: 'activity-intensity-bar',
+          style: { width: `${data.activityIntensity}%` }
+        })
       );
     }
 

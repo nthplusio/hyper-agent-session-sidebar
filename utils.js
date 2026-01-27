@@ -1,6 +1,18 @@
 // Hot-reloadable utility functions for hyper-session-sidebar
 const path = require('path');
 
+// Import Claude detection module
+let claudeDetection;
+try {
+  claudeDetection = require('./claude-detection');
+} catch (e) {
+  // Fallback if module not found
+  claudeDetection = {
+    isClaudeCodeSession: () => false,
+    getClaudeStateInfo: () => ({ label: 'Idle', icon: '✦', color: '#6c7086', animation: null }),
+  };
+}
+
 // Shell icon mapping (Nerd Font icons)
 const shellIcons = {
   powershell: { icon: '\uebc7', color: '#5391FE' },  //  blue
@@ -173,6 +185,86 @@ const extractPathFromTitle = (title) => {
   return '';
 };
 
+/**
+ * Get activity glyph info for a session
+ * Returns info for rendering the activity indicator dot/icon
+ * @param {Object} session - Session data
+ * @returns {Object} - { icon, className, title, style }
+ */
+const getActivityGlyph = (session) => {
+  if (!session) {
+    return {
+      icon: null,
+      className: 'activity-glyph inactive',
+      title: 'Inactive',
+      style: {},
+    };
+  }
+
+  // Check if this is a Claude Code session
+  const isClaude = claudeDetection.isClaudeCodeSession(session);
+
+  if (isClaude) {
+    const stateInfo = claudeDetection.getClaudeStateInfo(session.claudeState);
+    return {
+      icon: stateInfo.icon,
+      className: `activity-glyph claude ${session.claudeState || 'idle'}`,
+      title: `Claude: ${stateInfo.label}`,
+      style: { color: stateInfo.color },
+    };
+  }
+
+  // Standard terminal session activity states
+  const activityType = session.activityType || 'idle';
+
+  switch (activityType) {
+    case 'output':
+    case 'command':
+      // Active output - green pulsing dot
+      return {
+        icon: null,  // CSS dot
+        className: 'activity-glyph running',
+        title: 'Running',
+        style: {},
+      };
+    case 'typing':
+      // User typing - cyan fade
+      return {
+        icon: null,
+        className: 'activity-glyph has-output',
+        title: 'Has output',
+        style: {},
+      };
+    case 'idle':
+    default:
+      return {
+        icon: null,
+        className: 'activity-glyph inactive',
+        title: 'Inactive',
+        style: {},
+      };
+  }
+};
+
+/**
+ * Get activity type info for display
+ * @param {string} activityType - Activity type ('idle', 'output', 'typing', 'command')
+ * @returns {Object} - { label, color }
+ */
+const getActivityTypeInfo = (activityType) => {
+  switch (activityType) {
+    case 'command':
+      return { label: 'Running', color: '#a6e3a1' };  // Green
+    case 'output':
+      return { label: 'Output', color: '#94e2d5' };   // Cyan
+    case 'typing':
+      return { label: 'Typing', color: '#89b4fa' };   // Blue
+    case 'idle':
+    default:
+      return { label: 'Idle', color: '#6c7086' };     // Gray
+  }
+};
+
 module.exports = {
   shellIcons,
   getShellInfo,
@@ -180,4 +272,6 @@ module.exports = {
   shortenPath,
   getShellIconForLauncher,
   extractPathFromTitle,
+  getActivityGlyph,
+  getActivityTypeInfo,
 };

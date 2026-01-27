@@ -1,6 +1,6 @@
 {
   "name": "hyper-agent-session-sidebar",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Sidebar showing session status with CWD detection, git branch, shell launcher, and activity tracking for Hyper terminal",
   "main": "index.js",
   "keywords": [
