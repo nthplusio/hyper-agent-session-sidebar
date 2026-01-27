@@ -1,0 +1,25 @@
+{
+  "name": "hyper-agent-session-sidebar",
+  "version": "1.0.0",
+  "description": "Sidebar showing session status with CWD detection, git branch, shell launcher, and activity tracking for Hyper terminal",
+  "main": "index.js",
+  "keywords": [
+    "hyper",
+    "hyper-plugin",
+    "sidebar",
+    "session",
+    "git",
+    "cwd",
+    "terminal"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nthplusio/hyper-agent-session-sidebar.git"
+  },
+  "bugs": {
+    "url": "https://github.com/nthplusio/hyper-agent-session-sidebar/issues"
+  },
+  "homepage": "https://github.com/nthplusio/hyper-agent-session-sidebar#readme",
+  "author": "scoussens",
+  "license": "MIT"
+}
