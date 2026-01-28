@@ -99,6 +99,16 @@ const ICONS = {
     label: 'Sparkles'
   },
 
+  // Language/Runtime icons
+  hexagon: {
+    path: '<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>',
+    label: 'Hexagon'
+  },
+  gem: {
+    path: '<path d="M6 3h12l4 6-10 13L2 9Z"/><path d="M11 3 8 9l4 13 4-13-3-6"/><path d="M2 9h20"/>',
+    label: 'Gem'
+  },
+
   // Misc
   play: {
     path: '<polygon points="5 3 19 12 5 21 5 3"/>',

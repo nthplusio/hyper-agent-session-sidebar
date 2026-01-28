@@ -42,17 +42,18 @@ const CLAUDE_ASSISTANT = {
     /powered by claude/i,
   ],
 
-  // Terminal title patterns
+  // Terminal title patterns (must be specific to avoid matching directory names)
   titlePatterns: [
-    /claude/i,
-    /anthropic/i,
+    /claude[- ]?code/i,
+    /\bclaude\s*>/i,  // Claude prompt like "claude>"
   ],
 
   // UI patterns - Claude uses box-drawing characters for its interface
+  // Must be specific to avoid matching prompts/tables that use single box chars
   uiPatterns: [
-    /[┌┐└┘│─├┤┬┴┼]/,  // Box drawing
-    /╭.*╮|╰.*╯/,       // Rounded corners
-    /⎯{3,}/,           // Horizontal rules
+    /╭─+.*─+╮/,        // Rounded top border (Claude's message boxes)
+    /╰─+.*─+╯/,        // Rounded bottom border
+    /│\s{2,}.*\s{2,}│/, // Content between pipes with padding (Claude's box content)
   ],
 
   // Tool usage patterns (more specific than just tool names)

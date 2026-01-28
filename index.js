@@ -690,9 +690,16 @@ const generateCSS = (config) => {
     margin-bottom: 4px;
   }
   .session-shell-icon {
-    font-size: 14px;
     flex-shrink: 0;
-    width: 16px;
+    width: 14px;
+    height: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .session-shell-icon svg {
+    width: 14px;
+    height: 14px;
   }
   .session-title {
     flex: 1;
@@ -882,7 +889,15 @@ const generateCSS = (config) => {
   }
   .session-detail-icon {
     width: 12px;
+    height: 12px;
     flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .session-detail-icon svg {
+    width: 12px;
+    height: 12px;
   }
   .session-detail-text {
     overflow: hidden;
@@ -906,7 +921,15 @@ const generateCSS = (config) => {
   .session-git-icon {
     color: ${t.orange};
     width: 12px;
+    height: 12px;
     flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .session-git-icon svg {
+    width: 12px;
+    height: 12px;
   }
   .session-git-branch {
     color: ${t.green};
@@ -930,9 +953,19 @@ const generateCSS = (config) => {
     align-items: center;
     gap: 2px;
   }
+  .session-git-dirty svg {
+    width: 10px;
+    height: 10px;
+  }
   .session-git-clean {
     color: ${t.green};
     font-size: 9px;
+    display: flex;
+    align-items: center;
+  }
+  .session-git-clean svg {
+    width: 10px;
+    height: 10px;
   }
 
   /* Status bar */
@@ -972,14 +1005,14 @@ const generateCSS = (config) => {
   /* Quick Launch Bar - Ghost icon buttons */
   .shell-quicklaunch {
     display: flex;
-    gap: 6px;
+    gap: 4px;
     padding: 6px 8px;
     background: transparent;
     border-bottom: 1px solid ${t.border};
   }
   .shell-quicklaunch-btn {
-    width: 28px;
-    height: 28px;
+    width: 32px;
+    height: 32px;
     padding: 0;
     border-radius: 6px;
     background: transparent;
@@ -988,7 +1021,9 @@ const generateCSS = (config) => {
     cursor: pointer;
     font-family: inherit;
     transition: all 0.15s ease;
-    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
   .shell-quicklaunch-btn:hover {
     background: ${t.surface1};
@@ -999,18 +1034,15 @@ const generateCSS = (config) => {
     background: ${t.surface2};
   }
   .shell-quicklaunch-btn-icon {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
     display: flex;
     align-items: center;
     justify-content: center;
-    line-height: 0;
+    width: 18px;
+    height: 18px;
   }
   .shell-quicklaunch-btn-icon svg {
-    width: 16px;
-    height: 16px;
+    width: 18px;
+    height: 18px;
     stroke-width: 2;
   }
 
@@ -1801,10 +1833,17 @@ exports.decorateHyper = (Hyper, { React }) => {
         React.createElement(
           'div',
           { className: 'session-header-row' },
-          React.createElement('span', {
-            className: 'session-shell-icon',
-            style: { color: shellInfo.color }
-          }, shellInfo.icon),
+          // Shell icon (SVG)
+          shellInfo.svg
+            ? React.createElement('span', {
+                className: 'session-shell-icon',
+                style: { color: shellInfo.color },
+                dangerouslySetInnerHTML: { __html: shellInfo.svg }
+              })
+            : React.createElement('span', {
+                className: 'session-shell-icon',
+                style: { color: shellInfo.color }
+              }, shellInfo.icon),
           React.createElement(
             'div',
             { className: 'session-title' },
@@ -1832,14 +1871,20 @@ exports.decorateHyper = (Hyper, { React }) => {
           pluginConfig.showCwd && effectiveCwd && React.createElement(
             'div',
             { className: 'session-detail-row session-cwd', title: effectiveCwd },
-            React.createElement('span', { className: 'session-detail-icon' }, '\uf07b'),
+            React.createElement('span', {
+              className: 'session-detail-icon',
+              dangerouslySetInnerHTML: { __html: utils.icons.getIconSvg('folder', 12) }
+            }),
             React.createElement('span', { className: 'session-detail-text' }, shortCwd)
           ),
           // Git row
           pluginConfig.showGit && React.createElement(
             'div',
             { className: 'session-detail-row session-git' },
-            React.createElement('span', { className: 'session-git-icon' }, '\ue725'),
+            React.createElement('span', {
+              className: 'session-git-icon',
+              dangerouslySetInnerHTML: { __html: utils.icons.getIconSvg('git-branch', 12) }
+            }),
             data.git && data.git.branch
               ? React.createElement(
                   React.Fragment,
@@ -1849,8 +1894,14 @@ exports.decorateHyper = (Hyper, { React }) => {
                     'span',
                     { className: 'session-git-stats' },
                     data.git.dirty > 0
-                      ? React.createElement('span', { className: 'session-git-dirty' }, '\uf040', ` ${data.git.dirty}`)
-                      : React.createElement('span', { className: 'session-git-clean' }, '\uf00c')
+                      ? React.createElement('span', {
+                          className: 'session-git-dirty',
+                          dangerouslySetInnerHTML: { __html: utils.icons.getIconSvg('file-code', 10) + ` ${data.git.dirty}` }
+                        })
+                      : React.createElement('span', {
+                          className: 'session-git-clean',
+                          dangerouslySetInnerHTML: { __html: utils.icons.getIconSvg('check', 10) }
+                        })
                   )
                 )
               : React.createElement('span', { style: { color: '#585b70', fontStyle: 'italic' } }, 'no repo')

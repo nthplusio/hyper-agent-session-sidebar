@@ -26,40 +26,43 @@ try {
   icons = { getIconSvg: () => '', hasIcon: () => false };
 }
 
-// Shell icon mapping (Nerd Font icons) - used for session cards
-// Nerd Fonts have brand-specific icons that look great
+// Unified shell icon mapping - Lucide icons for all components
+// Each entry: { icon: 'lucide-icon-name', color: '#hex' }
 const shellIcons = {
-  powershell: { icon: '\uebc7', color: '#5391FE' },
-  pwsh: { icon: '\uebc7', color: '#5391FE' },
-  bash: { icon: '\ue795', color: '#89e051' },
-  zsh: { icon: '\ue795', color: '#89e051' },
-  fish: { icon: '\uf489', color: '#fab387' },
-  cmd: { icon: '\uebc4', color: '#cdd6f4' },
-  node: { icon: '\ue718', color: '#8CC84B' },
-  python: { icon: '\ue73c', color: '#FFD43B' },
-  ruby: { icon: '\ue791', color: '#CC342D' },
-  default: { icon: '\uf489', color: '#89b4fa' },
-};
-
-// Launcher icons - Lucide SVG icons for clean rendering
-const launcherIcons = {
   powershell: { icon: 'terminal', color: '#5391FE' },
+  pwsh: { icon: 'terminal', color: '#5391FE' },
   bash: { icon: 'terminal', color: '#89e051' },
+  zsh: { icon: 'terminal', color: '#89e051' },
+  fish: { icon: 'terminal', color: '#fab387' },
   cmd: { icon: 'square-terminal', color: '#cdd6f4' },
+  node: { icon: 'hexagon', color: '#8CC84B' },
+  python: { icon: 'code', color: '#FFD43B' },
+  ruby: { icon: 'gem', color: '#CC342D' },
   default: { icon: 'terminal', color: '#89b4fa' },
 };
 
 // Claude orange color (matches the Claude crab)
 const CLAUDE_ORANGE = '#f5a623';
 
+// Helper to create icon info with SVG
+const makeIconInfo = (iconDef, size = 14) => {
+  const svg = icons.getIconSvg ? icons.getIconSvg(iconDef.icon, size) : '';
+  return {
+    icon: iconDef.icon,
+    color: iconDef.color,
+    svg: svg,
+    isSvg: svg.length > 0,
+  };
+};
+
 // Get shell icon and color based on shell path, title, or AI assistant detection
-const getShellInfo = (session) => {
-  // Check if this is an AI assistant session - show robot icon with orange color
+const getShellInfo = (session, size = 14) => {
+  // Check if this is an AI assistant session - show bot icon with orange color
   const isAI = session.claudeDetected || session.aiAssistantId ||
     (aiDetection.isAIAssistantSession && aiDetection.isAIAssistantSession(session));
 
   if (isAI) {
-    return { icon: '\ueb99', color: CLAUDE_ORANGE };  // Robot icon, Claude orange
+    return makeIconInfo({ icon: 'bot', color: CLAUDE_ORANGE }, size);
   }
 
   const shell = (session.shell || '').toLowerCase();
@@ -67,39 +70,39 @@ const getShellInfo = (session) => {
 
   // Check shell path
   if (shell.includes('powershell') || shell.includes('pwsh')) {
-    return shellIcons.powershell;
+    return makeIconInfo(shellIcons.powershell, size);
   }
   if (shell.includes('bash')) {
-    return shellIcons.bash;
+    return makeIconInfo(shellIcons.bash, size);
   }
   if (shell.includes('zsh')) {
-    return shellIcons.zsh;
+    return makeIconInfo(shellIcons.zsh, size);
   }
   if (shell.includes('fish')) {
-    return shellIcons.fish;
+    return makeIconInfo(shellIcons.fish, size);
   }
   if (shell.includes('cmd')) {
-    return shellIcons.cmd;
+    return makeIconInfo(shellIcons.cmd, size);
   }
   if (shell.includes('node')) {
-    return shellIcons.node;
+    return makeIconInfo(shellIcons.node, size);
   }
   if (shell.includes('python')) {
-    return shellIcons.python;
+    return makeIconInfo(shellIcons.python, size);
   }
 
   // Check title for running process
   if (title.includes('node')) {
-    return shellIcons.node;
+    return makeIconInfo(shellIcons.node, size);
   }
   if (title.includes('python') || title.includes('pip')) {
-    return shellIcons.python;
+    return makeIconInfo(shellIcons.python, size);
   }
   if (title.includes('ruby') || title.includes('gem')) {
-    return shellIcons.ruby;
+    return makeIconInfo(shellIcons.ruby, size);
   }
 
-  return shellIcons.default;
+  return makeIconInfo(shellIcons.default, size);
 };
 
 // Extract process name from shell path or title
@@ -145,28 +148,22 @@ const shortenPath = (fullPath) => {
 };
 
 // Get shell icon for launcher buttons (uses Lucide SVG icons)
-const getShellIconForLauncher = (shell) => {
+const getShellIconForLauncher = (shell, size = 16) => {
   const shellPath = (shell.shell || '').toLowerCase();
   const shellName = (shell.name || '').toLowerCase();
 
   let iconDef;
   if (shellPath.includes('powershell') || shellPath.includes('pwsh')) {
-    iconDef = launcherIcons.powershell;
+    iconDef = shellIcons.powershell;
   } else if (shellPath.includes('git') || shellName.includes('git') || shellPath.includes('bash')) {
-    iconDef = launcherIcons.bash;
+    iconDef = shellIcons.bash;
   } else if (shellPath.includes('cmd')) {
-    iconDef = launcherIcons.cmd;
+    iconDef = shellIcons.cmd;
   } else {
-    iconDef = launcherIcons.default;
+    iconDef = shellIcons.default;
   }
 
-  // Return with SVG markup
-  return {
-    icon: iconDef.icon,
-    color: iconDef.color,
-    svg: icons.getIconSvg(iconDef.icon, 16),
-    isSvg: true,
-  };
+  return makeIconInfo(iconDef, size);
 };
 
 // Extract a path from terminal title (Windows titles often contain the CWD)
@@ -331,8 +328,8 @@ const getActivityTypeInfo = (activityType) => {
 
 module.exports = {
   shellIcons,
-  launcherIcons,
   icons,
+  makeIconInfo,
   getShellInfo,
   getProcessName,
   shortenPath,
