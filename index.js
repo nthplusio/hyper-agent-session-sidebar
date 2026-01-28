@@ -655,23 +655,6 @@ const generateCSS = (config) => {
     align-items: center;
     gap: 6px;
   }
-  .session-refresh-btn {
-    background: transparent;
-    border: none;
-    color: ${t.subtext};
-    cursor: pointer;
-    padding: 2px 4px;
-    font-size: 12px;
-    line-height: 1;
-    border-radius: 4px;
-    transition: all 0.15s ease;
-    font-family: "FiraCode Nerd Font", "Fira Code NF", Consolas, monospace;
-  }
-  .session-refresh-btn:hover {
-    color: ${t.foreground};
-    background: ${t.surface1};
-  }
-
   /* Session Cards */
   .session-item {
     position: relative;
@@ -1705,49 +1688,6 @@ exports.decorateHyper = (Hyper, { React }) => {
       }
     }
 
-    handleRefresh() {
-      log('handleRefresh - forcing sidebar refresh with hot-reload');
-
-      // Clear utils cache for hot-reload
-      try {
-        delete require.cache[require.resolve(UTILS_PATH)];
-        log('Utils cache cleared successfully');
-      } catch (e) {
-        log('Error clearing utils cache:', e.message);
-      }
-
-      // Clear claude detection cache for hot-reload
-      try {
-        delete require.cache[require.resolve(CLAUDE_DETECTION_PATH)];
-        log('Claude detection cache cleared successfully');
-      } catch (e) {
-        log('Error clearing claude detection cache:', e.message);
-      }
-
-      // Deep clone sessions to ensure React sees it as new data
-      const freshSessions = {};
-      Object.keys(sessions).forEach((uid) => {
-        freshSessions[uid] = { ...sessions[uid], git: { ...sessions[uid].git } };
-      });
-
-      // Increment refresh counter to force re-render
-      const newCounter = (this.state._refreshCounter || 0) + 1;
-
-      log('Refresh: updating state', {
-        sessionCount: Object.keys(freshSessions).length,
-        refreshCounter: newCounter
-      });
-
-      // Force component re-render with new state object
-      this.setState({
-        sessions: freshSessions,
-        activeUid: activeUid,
-        _refreshCounter: newCounter
-      }, () => {
-        log('Refresh: setState callback fired, render should have occurred');
-      });
-    }
-
     cycleViewMode() {
       const currentIndex = VIEW_MODES.indexOf(this.state.viewMode);
       const nextIndex = (currentIndex + 1) % VIEW_MODES.length;
@@ -1979,15 +1919,6 @@ exports.decorateHyper = (Hyper, { React }) => {
                 title: `View: ${this.state.viewMode} (click to cycle)`
               },
               VIEW_MODE_ICONS[this.state.viewMode]
-            ),
-            DEV_LOGGING && React.createElement(
-              'button',
-              {
-                className: 'session-refresh-btn',
-                onClick: () => this.handleRefresh(),
-                title: 'Refresh sidebar (dev mode)'
-              },
-              '\ueb37' // Codicon sync icon (nf-cod-sync)
             ),
             React.createElement('span', { className: 'session-header-count' }, sessionList.length)
           )
