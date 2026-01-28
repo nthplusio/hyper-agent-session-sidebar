@@ -1,17 +1,22 @@
 // Hot-reloadable utility functions for hyper-session-sidebar
 const path = require('path');
 
-// Import Claude detection module
-let claudeDetection;
+// Import AI assistant detection module
+let aiDetection;
 try {
-  claudeDetection = require('./claude-detection');
+  aiDetection = require('./claude-detection');
 } catch (e) {
   // Fallback if module not found
-  claudeDetection = {
+  aiDetection = {
     isClaudeCodeSession: () => false,
+    isAIAssistantSession: () => false,
     getClaudeStateInfo: () => ({ label: 'Idle', icon: '✦', color: '#6c7086', animation: null }),
+    getAssistantStateInfo: () => ({ label: 'Idle', icon: '✦', color: '#6c7086', animation: null }),
   };
 }
+
+// Legacy alias
+const claudeDetection = aiDetection;
 
 // Shell icon mapping (Nerd Font icons)
 const shellIcons = {
@@ -201,49 +206,73 @@ const getActivityGlyph = (session) => {
     };
   }
 
-  // Check if this is a Claude Code session
-  const isClaude = claudeDetection.isClaudeCodeSession(session);
+  // Check if this is an AI assistant session (Claude, Cursor, etc.)
+  const isAI = aiDetection.isAIAssistantSession
+    ? aiDetection.isAIAssistantSession(session)
+    : aiDetection.isClaudeCodeSession(session);
 
-  if (isClaude) {
-    const stateInfo = claudeDetection.getClaudeStateInfo(session.claudeState);
+  if (isAI) {
+    const assistantId = session.aiAssistantId || 'claude';
+    const stateInfo = aiDetection.getAssistantStateInfo
+      ? aiDetection.getAssistantStateInfo(session.claudeState, assistantId)
+      : aiDetection.getClaudeStateInfo(session.claudeState);
+
+    // Get assistant name for display
+    const assistantName = aiDetection.ASSISTANT_MAP && aiDetection.ASSISTANT_MAP[assistantId]
+      ? aiDetection.ASSISTANT_MAP[assistantId].name
+      : 'Claude';
+
     return {
       icon: stateInfo.icon,
       className: `activity-glyph claude ${session.claudeState || 'idle'}`,
-      title: `Claude: ${stateInfo.label}`,
+      title: `${assistantName}: ${stateInfo.label}`,
       style: { color: stateInfo.color },
     };
   }
 
   // Standard terminal session activity states
   const activityType = session.activityType || 'idle';
+  const outputType = session.lastOutputType;
+
+  // Build base class name
+  let className = 'activity-glyph';
+  let title = 'Inactive';
 
   switch (activityType) {
     case 'output':
     case 'command':
-      // Active output - green pulsing dot
-      return {
-        icon: null,  // CSS dot
-        className: 'activity-glyph running',
-        title: 'Running',
-        style: {},
-      };
+      className += ' running';
+      title = 'Running';
+      break;
     case 'typing':
-      // User typing - cyan fade
-      return {
-        icon: null,
-        className: 'activity-glyph has-output',
-        title: 'Has output',
-        style: {},
-      };
+      className += ' has-output';
+      title = 'Has output';
+      break;
     case 'idle':
     default:
-      return {
-        icon: null,
-        className: 'activity-glyph inactive',
-        title: 'Inactive',
-        style: {},
-      };
+      className += ' inactive';
+      title = 'Inactive';
+      break;
   }
+
+  // Add output type class for color coding
+  if (outputType) {
+    className += ` output-${outputType}`;
+    const outputTypeLabels = {
+      error: 'Error',
+      warning: 'Warning',
+      success: 'Success',
+      progress: 'In Progress'
+    };
+    title = outputTypeLabels[outputType] || title;
+  }
+
+  return {
+    icon: null,  // CSS dot
+    className,
+    title,
+    style: {},
+  };
 };
 
 /**

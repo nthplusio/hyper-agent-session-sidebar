@@ -43,6 +43,14 @@ let activeUid = null;
 let initialized = false;
 let pollInterval = null;
 
+// Performance: Polling intervals based on window visibility
+const POLL_INTERVAL_ACTIVE = 500;    // ms when window is visible
+const POLL_INTERVAL_HIDDEN = 2000;   // ms when window is hidden
+let currentPollInterval = POLL_INTERVAL_ACTIVE;
+
+// Performance: Track visible sessions for lazy git fetching
+const visibleSessions = new Set();
+
 // Default configuration - these are fallbacks, actual colors come from Hyper theme
 const defaultConfig = {
   width: 220,
@@ -54,6 +62,8 @@ const defaultConfig = {
   activityTimeout: 3000, // ms to show activity indicator
   opacity: 0.9,
   opacityHover: 1,
+  // View mode: 'default' | 'compact' | 'micro'
+  viewMode: 'default',
   // Activity detection options
   enableClaudeDetection: true,   // Auto-detect Claude Code sessions
   claudeIdleTimeout: 5000,       // ms before working -> waiting transition
@@ -152,13 +162,14 @@ const getCwd = (uid, pid, callback) => {
 
 // =============================================================================
 // CWD DETECTION PATTERNS
-// Each pattern has: name, regex, transform (optional), skipIf (optional)
-// Patterns are tried in order - first match wins
+// Each pattern has: name, priority (higher = more reliable), regex, transform, skipIf
+// Patterns are scored by priority - highest priority match wins
 // =============================================================================
 const cwdPatterns = [
   {
     name: 'OSC 7',
     description: 'Standard terminal CWD escape sequence',
+    priority: 100,  // Most reliable - explicit CWD reporting
     regex: /\x1b\]7;file:\/\/[^\/]*([^\x07\x1b]+)(?:\x07|\x1b\\)/,
     transform: (match) => {
       let path = decodeURIComponent(match);
@@ -172,11 +183,19 @@ const cwdPatterns = [
   {
     name: 'OSC 9;9',
     description: 'Windows Terminal style CWD escape sequence',
+    priority: 98,  // Very reliable - WT specific
     regex: /\x1b\]9;9;([^\x07\x1b]+)(?:\x07|\x1b\\)/,
+  },
+  {
+    name: 'ConPTY',
+    description: 'Windows Terminal ConPTY quoted path',
+    priority: 97,  // Very reliable - ConPTY specific
+    regex: /\x1b\]9;9;"([^"]+)"\x1b\\/,
   },
   {
     name: 'MINGW',
     description: 'Git Bash MINGW prompt with path',
+    priority: 85,  // Reliable - explicit in title/prompt
     regex: /MINGW\d*\s+(\/[a-z](?:\/[^\s\r\n$]*)?)/i,
     transform: (match) => {
       const drive = match[1].toUpperCase();
@@ -186,22 +205,26 @@ const cwdPatterns = [
   {
     name: 'PS Prompt',
     description: 'Standard PowerShell "PS path>" prompt',
+    priority: 70,  // Good - standard PS prompt format
     regex: /PS\s+([A-Za-z]:\\[^\r\n>]+)>/,
-  },
-  {
-    name: 'CMD Prompt',
-    description: 'Standard CMD "path>" prompt',
-    regex: /^([A-Za-z]:\\[^\r\n>]*)>/m,
-    skipIf: (path) => /\\windows\\|\\system32\\|\\program files/i.test(path),
   },
   {
     name: 'Directory Output',
     description: 'PowerShell dir/Get-ChildItem "Directory:" output',
+    priority: 65,  // Good - explicit directory label
     regex: /Directory:\s*([A-Za-z]:\\[^\r\n\x1b]+)/,
+  },
+  {
+    name: 'CMD Prompt',
+    description: 'Standard CMD "path>" prompt',
+    priority: 60,  // Moderate - common but can have false positives
+    regex: /^([A-Za-z]:\\[^\r\n>]*)>/m,
+    skipIf: (path) => /\\windows\\|\\system32\\|\\program files/i.test(path),
   },
   {
     name: 'Tilde Prompt',
     description: 'Custom prompt with ~ path (Oh My Posh, Starship, etc.)',
+    priority: 55,  // Moderate - needs home expansion
     regex: /\x1b\[\d*m\s*(~(?:[\\\/][^\s\r\n\x1b❯>$#]*)?)\s*\x1b/,
     transform: (match) => {
       const homePath = process.env.USERPROFILE || process.env.HOME || '';
@@ -212,12 +235,14 @@ const cwdPatterns = [
   {
     name: 'Full Windows Path',
     description: 'Full Windows path in colored prompt',
+    priority: 40,  // Lower - generic pattern, more false positives
     regex: /\x1b\[\d*m\s*([A-Za-z]:\\[^\s\r\n\x1b❯>$#]*)/,
     skipIf: (path) => /\\windows\\|\\system32\\|\\program files/i.test(path),
   },
   {
     name: 'Unix Path',
     description: 'Git Bash Unix-style path (/c/path)',
+    priority: 35,  // Lower - can match partial paths
     regex: /(?:^|[\s\x1b\[\]0-9;m]+)(\/[a-z]\/[^\s\r\n\x1b❯>$#]*)/im,
     transform: (match) => {
       const drive = match[1].toUpperCase();
@@ -226,10 +251,75 @@ const cwdPatterns = [
   },
 ];
 
-// Try to extract CWD from terminal data using registered patterns
+// Pre-compile regex patterns for performance
+const compiledCwdPatterns = cwdPatterns.map(p => ({
+  ...p,
+  compiled: new RegExp(p.regex.source, p.regex.flags)
+}));
+
+// =============================================================================
+// OUTPUT TYPE PATTERNS - Detect error/warning/success for color-coded indicators
+// =============================================================================
+const OUTPUT_PATTERNS = {
+  error: {
+    patterns: [
+      /\b(error|failed|failure|exception|fatal|denied|refused|cannot|unable)\b/i,
+      /\bERR[!:]/,
+      /\x1b\[31m/,  // Red ANSI
+      /\x1b\[91m/,  // Bright red ANSI
+    ],
+    color: 'error'
+  },
+  warning: {
+    patterns: [
+      /\b(warn|warning|deprecated|caution)\b/i,
+      /\bWARN[!:]/,
+      /\x1b\[33m/,  // Yellow ANSI
+      /\x1b\[93m/,  // Bright yellow ANSI
+    ],
+    color: 'warning'
+  },
+  success: {
+    patterns: [
+      /\b(success|succeeded|passed|complete|completed|done|ok)\b/i,
+      /\x1b\[32m/,  // Green ANSI
+      /\x1b\[92m/,  // Bright green ANSI
+      /✓|✔|√/,
+    ],
+    color: 'success'
+  },
+  progress: {
+    patterns: [
+      /\d+%/,
+      /\[\s*[=>#-]+\s*\]/,  // Progress bars
+      /\.{3,}/,  // Ellipsis (loading...)
+    ],
+    color: 'progress'
+  }
+};
+
+// Detect output type from terminal data
+const detectOutputType = (data) => {
+  for (const [type, config] of Object.entries(OUTPUT_PATTERNS)) {
+    for (const pattern of config.patterns) {
+      if (pattern.test(data)) {
+        return type;
+      }
+    }
+  }
+  return null;
+};
+
+// Activity burst detection threshold (ms)
+const BURST_THRESHOLD = 250;  // Wider than before (was effectively 100ms)
+
+// Try to extract CWD from terminal data using priority-scored patterns
 const extractCwd = (data) => {
-  for (const pattern of cwdPatterns) {
-    const match = data.match(pattern.regex);
+  // Collect all matches with their priorities
+  const matches = [];
+
+  for (const pattern of compiledCwdPatterns) {
+    const match = data.match(pattern.compiled);
     if (match) {
       let path = match[1].trim();
 
@@ -243,10 +333,41 @@ const extractCwd = (data) => {
         continue;
       }
 
-      return { path, patternName: pattern.name };
+      matches.push({
+        path,
+        patternName: pattern.name,
+        priority: pattern.priority
+      });
     }
   }
+
+  // Return highest priority match
+  if (matches.length > 0) {
+    matches.sort((a, b) => b.priority - a.priority);
+    return matches[0];
+  }
+
   return null;
+};
+
+// Output buffering for CWD detection (prompts often arrive in chunks)
+const cwdBuffers = {};
+const cwdBufferTimeouts = {};
+const CWD_BUFFER_TIMEOUT = 150;  // ms to wait for complete prompt
+
+// Process buffered output for CWD extraction
+const processCwdBuffer = (uid) => {
+  if (!sessions[uid] || !cwdBuffers[uid]) return;
+
+  const bufferedData = cwdBuffers[uid];
+  cwdBuffers[uid] = '';
+
+  const result = extractCwd(bufferedData);
+  if (result && result.path && result.path !== sessions[uid].cwd) {
+    log(`CWD detected [${result.patternName}] (priority ${result.priority || 'n/a'}):`, result.path);
+    sessions[uid].cwd = result.path;
+    getGitInfo(uid, result.path);
+  }
 };
 
 // Parse terminal output for CWD and activity patterns
@@ -272,26 +393,34 @@ const parseTerminalOutput = (uid, data) => {
   // Calculate time since last output for intensity tracking
   const timeSinceLastOutput = session.lastOutputTime ? now - session.lastOutputTime : Infinity;
 
+  // Detect output type for color-coded indicators
+  const outputType = data.length > 5 ? detectOutputType(data) : null;
+  if (outputType) {
+    session.lastOutputType = outputType;
+    session.lastOutputTypeTime = now;
+  }
+
   // Determine activity type based on output characteristics
   if (data.length > 5) {
     // Significant output (not just single keystrokes)
 
-    // Track burst rate for intensity calculation
-    if (timeSinceLastOutput < 100) {
-      // Rapid output (< 100ms apart) = likely command running
+    // Track burst rate for intensity calculation (wider threshold)
+    if (timeSinceLastOutput < BURST_THRESHOLD) {
+      // Rapid output = likely command running
       session.outputBurstCount = Math.min((session.outputBurstCount || 0) + 1, 100);
       session.activityType = 'command';
-      session.activityIntensity = Math.min(session.outputBurstCount * 5, 100);
+      session.activityIntensity = Math.min(session.outputBurstCount * 4, 100);
     } else if (timeSinceLastOutput < 1000) {
       // Normal output rate
       session.outputBurstCount = Math.max((session.outputBurstCount || 0) - 1, 0);
       session.activityType = 'output';
-      session.activityIntensity = Math.max(30, session.activityIntensity - 5);
+      // Boost intensity slightly instead of just maintaining
+      session.activityIntensity = Math.min(50, (session.activityIntensity || 0) + 10);
     } else {
       // Fresh output after pause
       session.outputBurstCount = 1;
       session.activityType = 'output';
-      session.activityIntensity = 30;
+      session.activityIntensity = 35;
     }
 
     session.lastOutputTime = now;
@@ -303,20 +432,27 @@ const parseTerminalOutput = (uid, data) => {
   } else if (data.length > 0 && data.length <= 5) {
     // Single characters - likely user typing
     session.activityType = 'typing';
-    session.activityIntensity = Math.max(10, (session.activityIntensity || 0) - 2);
+    // Slight decay for typing
+    session.activityIntensity = Math.max(10, (session.activityIntensity || 0) * 0.95);
   }
 
   // =========================================================================
-  // CWD DETECTION
+  // CWD DETECTION (buffered for multi-chunk prompts)
   // =========================================================================
 
-  // Try to extract CWD using pattern matching
-  const result = extractCwd(data);
-  if (result && result.path && result.path !== session.cwd) {
-    log(`CWD detected [${result.patternName}]:`, result.path);
-    session.cwd = result.path;
-    getGitInfo(uid, result.path);
+  // Buffer output and debounce CWD extraction
+  cwdBuffers[uid] = (cwdBuffers[uid] || '') + data;
+
+  // Limit buffer size to prevent memory issues (keep last 4KB)
+  if (cwdBuffers[uid].length > 4096) {
+    cwdBuffers[uid] = cwdBuffers[uid].slice(-4096);
   }
+
+  // Debounce CWD extraction to allow prompt chunks to arrive
+  if (cwdBufferTimeouts[uid]) {
+    clearTimeout(cwdBufferTimeouts[uid]);
+  }
+  cwdBufferTimeouts[uid] = setTimeout(() => processCwdBuffer(uid), CWD_BUFFER_TIMEOUT);
 
   // =========================================================================
   // CLAUDE CODE DETECTION
@@ -347,10 +483,18 @@ const parseTerminalOutput = (uid, data) => {
   }
 };
 
-// Get git information for a directory (debounced per session)
+// Get git information for a directory (debounced per session, lazy for non-visible)
 const gitDebounce = {};
-const getGitInfo = (uid, cwd) => {
+const getGitInfo = (uid, cwd, forceVisible = false) => {
   if (!cwd || !sessions[uid] || !pluginConfig.showGit) return;
+
+  // Performance: Skip git fetch for non-visible sessions unless forced
+  // (IntersectionObserver will trigger fetch when they become visible)
+  if (!forceVisible && visibleSessions.size > 0 && !visibleSessions.has(uid)) {
+    // Mark that git info is pending for when session becomes visible
+    sessions[uid]._pendingGitFetch = true;
+    return;
+  }
 
   // Debounce git checks per session
   if (gitDebounce[uid]) {
@@ -397,7 +541,7 @@ const markActivity = (uid) => {
   sessions[uid].activityTime = Date.now();
 };
 
-// Clear old activity indicators and decay intensity
+// Clear old activity indicators and decay intensity (exponential decay)
 const clearOldActivity = () => {
   const now = Date.now();
   Object.keys(sessions).forEach((uid) => {
@@ -410,15 +554,26 @@ const clearOldActivity = () => {
       }
     }
 
-    // Decay activity intensity over time
-    const timeSinceOutput = session.lastOutputTime ? now - session.lastOutputTime : Infinity;
-    if (timeSinceOutput > 2000) {
-      // No output for 2+ seconds - decay intensity
-      session.activityIntensity = Math.max(0, (session.activityIntensity || 0) - 10);
-      session.outputBurstCount = Math.max(0, (session.outputBurstCount || 0) - 5);
+    // Clear output type indicator after 3 seconds
+    if (session.lastOutputType && session.lastOutputTypeTime) {
+      if (now - session.lastOutputTypeTime > 3000) {
+        session.lastOutputType = null;
+      }
+    }
 
-      if (session.activityIntensity === 0 && session.activityType !== 'idle') {
-        session.activityType = 'idle';
+    // Exponential decay of activity intensity over time
+    const timeSinceOutput = session.lastOutputTime ? now - session.lastOutputTime : Infinity;
+    if (timeSinceOutput > 1500) {
+      // No output for 1.5+ seconds - exponential decay (feels more natural)
+      session.activityIntensity = Math.max(0, (session.activityIntensity || 0) * 0.85);
+      session.outputBurstCount = Math.max(0, Math.floor((session.outputBurstCount || 0) * 0.8));
+
+      // Threshold to snap to zero and set idle
+      if (session.activityIntensity < 3) {
+        session.activityIntensity = 0;
+        if (session.activityType !== 'idle') {
+          session.activityType = 'idle';
+        }
       }
     }
 
@@ -669,6 +824,58 @@ const generateCSS = (config) => {
     100% { opacity: 0.5; }
   }
 
+  /* ═══════════════════════════════════════════════════════════════
+     OUTPUT TYPE INDICATORS - Color-coded based on output content
+     ═══════════════════════════════════════════════════════════════ */
+
+  /* Error output - red glow */
+  .activity-glyph.output-error {
+    background: ${t.red} !important;
+    box-shadow: 0 0 6px ${t.red}80, 0 0 2px ${t.red};
+    animation: glyph-pulse 0.8s ease-in-out infinite;
+  }
+  .session-item.output-error {
+    border-left-color: ${t.red} !important;
+  }
+  .session-item.output-error .activity-intensity-bar {
+    background: linear-gradient(90deg, ${t.red}, ${t.orange});
+  }
+
+  /* Warning output - yellow/amber glow */
+  .activity-glyph.output-warning {
+    background: ${t.yellow} !important;
+    box-shadow: 0 0 5px ${t.yellow}70;
+    animation: glyph-pulse 1s ease-in-out infinite;
+  }
+  .session-item.output-warning {
+    border-left-color: ${t.yellow} !important;
+  }
+  .session-item.output-warning .activity-intensity-bar {
+    background: linear-gradient(90deg, ${t.yellow}, ${t.orange});
+  }
+
+  /* Success output - green glow */
+  .activity-glyph.output-success {
+    background: ${t.green} !important;
+    box-shadow: 0 0 5px ${t.green}70;
+  }
+  .session-item.output-success {
+    border-left-color: ${t.green} !important;
+  }
+  .session-item.output-success .activity-intensity-bar {
+    background: linear-gradient(90deg, ${t.green}, ${t.cyan});
+  }
+
+  /* Progress output - cyan pulse */
+  .activity-glyph.output-progress {
+    background: ${t.cyan} !important;
+    box-shadow: 0 0 4px ${t.cyan}60;
+    animation: glyph-pulse 1.2s ease-in-out infinite;
+  }
+  .session-item.output-progress {
+    border-left-color: ${t.cyan} !important;
+  }
+
   /* Activity intensity bar (optional) */
   .activity-intensity-bar {
     position: absolute;
@@ -848,6 +1055,147 @@ const generateCSS = (config) => {
     background: ${t.overlay};
   }
 
+  /* View Mode Toggle Button */
+  .session-viewmode-btn {
+    background: transparent;
+    border: none;
+    color: ${t.subtext};
+    cursor: pointer;
+    padding: 2px 4px;
+    font-size: 10px;
+    line-height: 1;
+    border-radius: 4px;
+    transition: all 0.15s ease;
+    font-family: "FiraCode Nerd Font", "Fira Code NF", Consolas, monospace;
+  }
+  .session-viewmode-btn:hover {
+    color: ${t.foreground};
+    background: ${t.surface1};
+  }
+
+  /* ═══════════════════════════════════════════════════════════════
+     COMPACT VIEW MODE - Two-row condensed cards (~40px)
+     ═══════════════════════════════════════════════════════════════ */
+
+  .session-sidebar[data-view="compact"] .session-item {
+    padding: 6px 8px 6px 10px;
+    margin: 2px 4px;
+    border-left-width: 2px;
+  }
+  .session-sidebar[data-view="compact"] .session-header-row {
+    margin-bottom: 2px;
+    gap: 4px;
+  }
+  .session-sidebar[data-view="compact"] .session-shell-icon {
+    font-size: 12px;
+    width: 14px;
+  }
+  .session-sidebar[data-view="compact"] .session-process-name {
+    font-size: 10px;
+  }
+  .session-sidebar[data-view="compact"] .session-index {
+    font-size: 8px;
+    padding: 1px 4px;
+  }
+  .session-sidebar[data-view="compact"] .session-details {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 2px 10px;
+    margin-left: 18px;
+  }
+  .session-sidebar[data-view="compact"] .session-detail-row {
+    font-size: 9px;
+  }
+  .session-sidebar[data-view="compact"] .session-git {
+    font-size: 9px;
+  }
+  .session-sidebar[data-view="compact"] .session-status-bar {
+    display: none;
+  }
+  .session-sidebar[data-view="compact"] .activity-glyph {
+    width: 6px;
+    height: 6px;
+  }
+  .session-sidebar[data-view="compact"] .activity-glyph.claude {
+    font-size: 10px;
+  }
+  .session-sidebar[data-view="compact"] .activity-intensity-bar {
+    height: 1px;
+  }
+
+  /* ═══════════════════════════════════════════════════════════════
+     MICRO VIEW MODE - Icon-only with hover expand (~28px)
+     ═══════════════════════════════════════════════════════════════ */
+
+  .session-sidebar[data-view="micro"] .session-item {
+    padding: 4px 6px;
+    margin: 1px 3px;
+    border-left-width: 2px;
+    position: relative;
+  }
+  .session-sidebar[data-view="micro"] .session-header-row {
+    margin-bottom: 0;
+    gap: 4px;
+  }
+  .session-sidebar[data-view="micro"] .session-shell-icon {
+    font-size: 11px;
+    width: 12px;
+  }
+  .session-sidebar[data-view="micro"] .session-title {
+    gap: 4px;
+  }
+  .session-sidebar[data-view="micro"] .session-process-name {
+    font-size: 9px;
+    max-width: 80px;
+  }
+  .session-sidebar[data-view="micro"] .session-index {
+    font-size: 7px;
+    padding: 0px 3px;
+  }
+  .session-sidebar[data-view="micro"] .session-details {
+    display: none;
+    position: absolute;
+    left: calc(100% + 4px);
+    top: 0;
+    background: ${t.surface1};
+    border: 1px solid ${t.border};
+    border-radius: 6px;
+    padding: 8px 10px;
+    min-width: 160px;
+    z-index: 200;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    flex-direction: column;
+    gap: 4px;
+    margin-left: 0;
+  }
+  .session-sidebar[data-view="micro"] .session-item:hover .session-details {
+    display: flex;
+  }
+  .session-sidebar[data-view="micro"] .session-status-bar {
+    display: none;
+  }
+  .session-sidebar[data-view="micro"] .session-item:hover .session-status-bar {
+    display: flex;
+    margin-top: 4px;
+    padding-top: 4px;
+  }
+  .session-sidebar[data-view="micro"] .activity-glyph {
+    width: 5px;
+    height: 5px;
+  }
+  .session-sidebar[data-view="micro"] .activity-glyph.claude {
+    font-size: 9px;
+  }
+  .session-sidebar[data-view="micro"] .activity-intensity-bar {
+    display: none;
+  }
+
+  /* Micro mode: position popup on right side if sidebar is on right */
+  .session-sidebar[data-view="micro"][data-position="right"] .session-details {
+    left: auto;
+    right: calc(100% + 4px);
+  }
+
   /* Terminal Area Adjustment */
   .terms_terms {
     margin-${pos}: ${config.width}px !important;
@@ -986,8 +1334,9 @@ exports.middleware = (store) => {
         activityIntensity: 0,        // 0-100 for visual intensity
         lastOutputTime: null,
         outputBurstCount: 0,
-        // Claude Code detection fields
-        claudeDetected: false,
+        // AI Assistant detection fields (Claude, Cursor, etc.)
+        aiAssistantId: null,         // 'claude' | 'cursor' | 'copilot-cli' | 'aider' | null
+        claudeDetected: false,       // Legacy: true if Claude specifically
         claudeState: null,           // 'working' | 'thinking' | 'waiting' | 'idle'
         claudeSpinnerPhase: null,
         claudeLastActivity: null,
@@ -1038,7 +1387,8 @@ exports.middleware = (store) => {
             activityIntensity: 0,
             lastOutputTime: null,
             outputBurstCount: 0,
-            // Claude Code detection fields
+            // AI Assistant detection fields
+            aiAssistantId: null,
             claudeDetected: false,
             claudeState: null,
             claudeSpinnerPhase: null,
@@ -1070,6 +1420,11 @@ exports.middleware = (store) => {
         clearTimeout(gitDebounce[action.uid]);
         delete gitDebounce[action.uid];
       }
+      if (cwdBufferTimeouts[action.uid]) {
+        clearTimeout(cwdBufferTimeouts[action.uid]);
+        delete cwdBufferTimeouts[action.uid];
+      }
+      delete cwdBuffers[action.uid];
       delete sessions[action.uid];
       break;
   }
@@ -1159,10 +1514,25 @@ exports.onUnload = (app) => {
     delete gitDebounce[uid];
   });
 
+  // Clear all CWD buffer timeouts
+  Object.keys(cwdBufferTimeouts).forEach((uid) => {
+    clearTimeout(cwdBufferTimeouts[uid]);
+    delete cwdBufferTimeouts[uid];
+  });
+  Object.keys(cwdBuffers).forEach((uid) => delete cwdBuffers[uid]);
+
   // Reset state
   Object.keys(sessions).forEach((uid) => delete sessions[uid]);
   activeUid = null;
   initialized = false;
+};
+
+// View mode cycle order
+const VIEW_MODES = ['default', 'compact', 'micro'];
+const VIEW_MODE_ICONS = {
+  default: '\uf0c9',   // Hamburger/list icon
+  compact: '\uf03a',   // List compact
+  micro: '\uf009',     // Grid/dots
 };
 
 // Decorate Hyper to add sidebar
@@ -1170,17 +1540,67 @@ exports.decorateHyper = (Hyper, { React }) => {
   return class extends React.Component {
     constructor(props) {
       super(props);
+      // Get initial view mode from config
+      const sidebarConfig = (window.config && window.config.getConfig && window.config.getConfig().sessionSidebar) || {};
+      const initialViewMode = sidebarConfig.viewMode || 'default';
       this.state = {
         sessions: {},
-        activeUid: null
+        activeUid: null,
+        viewMode: initialViewMode
       };
     }
 
     componentDidMount() {
       log('componentDidMount - sidebar initialized');
 
+      // Set up visibility change listener for performance optimization
+      this.handleVisibilityChange = () => {
+        const isHidden = document.hidden;
+        const newInterval = isHidden ? POLL_INTERVAL_HIDDEN : POLL_INTERVAL_ACTIVE;
+
+        if (newInterval !== currentPollInterval) {
+          log('Visibility changed:', { hidden: isHidden, interval: newInterval });
+          currentPollInterval = newInterval;
+
+          // Restart polling with new interval
+          if (pollInterval) {
+            clearInterval(pollInterval);
+            pollInterval = setInterval(this.pollSessions.bind(this), currentPollInterval);
+          }
+        }
+      };
+      document.addEventListener('visibilitychange', this.handleVisibilityChange);
+
+      // Set up IntersectionObserver for lazy git loading
+      if (typeof IntersectionObserver !== 'undefined') {
+        this.sessionObserver = new IntersectionObserver((entries) => {
+          entries.forEach(entry => {
+            const uid = entry.target.dataset.sessionUid;
+            if (!uid) return;
+
+            if (entry.isIntersecting) {
+              visibleSessions.add(uid);
+              // Trigger git info fetch for newly visible session
+              const session = sessions[uid];
+              if (session && session.cwd) {
+                // Fetch if no branch yet OR if there was a pending fetch
+                if (!session.git.branch || session._pendingGitFetch) {
+                  session._pendingGitFetch = false;
+                  getGitInfo(uid, session.cwd, true);  // Force visible
+                }
+              }
+            } else {
+              visibleSessions.delete(uid);
+            }
+          });
+        }, { threshold: 0.1 });
+      }
+
       // Poll for session updates
-      pollInterval = setInterval(() => {
+      pollInterval = setInterval(this.pollSessions.bind(this), currentPollInterval);
+    }
+
+    pollSessions() {
         if (!window.store) {
           return;
         }
@@ -1216,7 +1636,8 @@ exports.decorateHyper = (Hyper, { React }) => {
                 activityIntensity: 0,
                 lastOutputTime: null,
                 outputBurstCount: 0,
-                // Claude Code detection fields
+                // AI Assistant detection fields
+                aiAssistantId: null,
                 claudeDetected: false,
                 claudeState: null,
                 claudeSpinnerPhase: null,
@@ -1248,11 +1669,26 @@ exports.decorateHyper = (Hyper, { React }) => {
         } catch (e) {
           console.error('[hyper-session-sidebar] Error:', e);
         }
-      }, 500);
     }
 
     componentWillUnmount() {
       log('componentWillUnmount');
+
+      // Clean up visibility listener
+      if (this.handleVisibilityChange) {
+        document.removeEventListener('visibilitychange', this.handleVisibilityChange);
+      }
+
+      // Clean up IntersectionObserver
+      if (this.sessionObserver) {
+        this.sessionObserver.disconnect();
+        this.sessionObserver = null;
+      }
+
+      // Clear visible sessions tracking
+      visibleSessions.clear();
+
+      // Clear poll interval
       if (pollInterval) {
         clearInterval(pollInterval);
         pollInterval = null;
@@ -1310,6 +1746,14 @@ exports.decorateHyper = (Hyper, { React }) => {
       }, () => {
         log('Refresh: setState callback fired, render should have occurred');
       });
+    }
+
+    cycleViewMode() {
+      const currentIndex = VIEW_MODES.indexOf(this.state.viewMode);
+      const nextIndex = (currentIndex + 1) % VIEW_MODES.length;
+      const nextMode = VIEW_MODES[nextIndex];
+      log('cycleViewMode:', { from: this.state.viewMode, to: nextMode });
+      this.setState({ viewMode: nextMode });
     }
 
     openShellTab(shell) {
@@ -1407,6 +1851,10 @@ exports.decorateHyper = (Hyper, { React }) => {
       if (isActive) className += ' active';
       if (hasActivity) className += ' has-activity';
       if (data.claudeDetected) className += ' claude-session';
+      // Add output type class for color-coded indicators
+      if (data.lastOutputType && !data.claudeDetected) {
+        className += ` output-${data.lastOutputType}`;
+      }
 
       // Build session card with new structure
       return React.createElement(
@@ -1414,6 +1862,13 @@ exports.decorateHyper = (Hyper, { React }) => {
         {
           key: uid,
           className: className,
+          'data-session-uid': uid,
+          ref: (el) => {
+            // Set up IntersectionObserver for lazy git loading
+            if (el && this.sessionObserver) {
+              this.sessionObserver.observe(el);
+            }
+          },
           onClick: () => this.handleSessionClick(uid)
         },
         // Header row: Icon + Name + Activity Glyph + Index
@@ -1497,11 +1952,17 @@ exports.decorateHyper = (Hyper, { React }) => {
 
     render() {
       const sessionList = Object.entries(this.state.sessions);
+      const sidebarConfig = (window.config && window.config.getConfig && window.config.getConfig().sessionSidebar) || {};
+      const position = sidebarConfig.position || 'left';
 
       const sidebar = React.createElement(
         'div',
-        { className: 'session-sidebar' },
-        // Header with count badge and optional refresh button
+        {
+          className: 'session-sidebar',
+          'data-view': this.state.viewMode,
+          'data-position': position
+        },
+        // Header with count badge, view mode toggle, and optional refresh button
         React.createElement(
           'div',
           { className: 'session-sidebar-header' },
@@ -1509,6 +1970,16 @@ exports.decorateHyper = (Hyper, { React }) => {
           React.createElement(
             'div',
             { className: 'session-header-actions' },
+            // View mode toggle button
+            React.createElement(
+              'button',
+              {
+                className: 'session-viewmode-btn',
+                onClick: () => this.cycleViewMode(),
+                title: `View: ${this.state.viewMode} (click to cycle)`
+              },
+              VIEW_MODE_ICONS[this.state.viewMode]
+            ),
             DEV_LOGGING && React.createElement(
               'button',
               {
