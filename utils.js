@@ -18,7 +18,16 @@ try {
 // Legacy alias
 const claudeDetection = aiDetection;
 
+// Import icon library
+let icons;
+try {
+  icons = require('./icons');
+} catch (e) {
+  icons = { getIconSvg: () => '', hasIcon: () => false };
+}
+
 // Shell icon mapping (Nerd Font icons) - used for session cards
+// Nerd Fonts have brand-specific icons that look great
 const shellIcons = {
   powershell: { icon: '\uebc7', color: '#5391FE' },
   pwsh: { icon: '\uebc7', color: '#5391FE' },
@@ -32,12 +41,12 @@ const shellIcons = {
   default: { icon: '\uf489', color: '#89b4fa' },
 };
 
-// Launcher icons - simple Unicode that centers reliably
+// Launcher icons - Lucide SVG icons for clean rendering
 const launcherIcons = {
-  powershell: { icon: '❯_', color: '#5391FE' },
-  bash: { icon: '$_', color: '#89e051' },
-  cmd: { icon: '>_', color: '#cdd6f4' },
-  default: { icon: '>_', color: '#89b4fa' },
+  powershell: { icon: 'terminal', color: '#5391FE' },
+  bash: { icon: 'terminal', color: '#89e051' },
+  cmd: { icon: 'square-terminal', color: '#cdd6f4' },
+  default: { icon: 'terminal', color: '#89b4fa' },
 };
 
 // Claude orange color (matches the Claude crab)
@@ -135,22 +144,29 @@ const shortenPath = (fullPath) => {
   return leaf;
 };
 
-// Get shell icon for launcher buttons (uses simple Unicode for reliable centering)
+// Get shell icon for launcher buttons (uses Lucide SVG icons)
 const getShellIconForLauncher = (shell) => {
   const shellPath = (shell.shell || '').toLowerCase();
   const shellName = (shell.name || '').toLowerCase();
 
+  let iconDef;
   if (shellPath.includes('powershell') || shellPath.includes('pwsh')) {
-    return launcherIcons.powershell;
+    iconDef = launcherIcons.powershell;
+  } else if (shellPath.includes('git') || shellName.includes('git') || shellPath.includes('bash')) {
+    iconDef = launcherIcons.bash;
+  } else if (shellPath.includes('cmd')) {
+    iconDef = launcherIcons.cmd;
+  } else {
+    iconDef = launcherIcons.default;
   }
-  // Git Bash - use bash icon
-  if (shellPath.includes('git') || shellName.includes('git') || shellPath.includes('bash')) {
-    return launcherIcons.bash;
-  }
-  if (shellPath.includes('cmd')) {
-    return launcherIcons.cmd;
-  }
-  return launcherIcons.default;
+
+  // Return with SVG markup
+  return {
+    icon: iconDef.icon,
+    color: iconDef.color,
+    svg: icons.getIconSvg(iconDef.icon, 16),
+    isSvg: true,
+  };
 };
 
 // Extract a path from terminal title (Windows titles often contain the CWD)
@@ -316,6 +332,7 @@ const getActivityTypeInfo = (activityType) => {
 module.exports = {
   shellIcons,
   launcherIcons,
+  icons,
   getShellInfo,
   getProcessName,
   shortenPath,
