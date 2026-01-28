@@ -991,6 +991,7 @@ const generateCSS = (config) => {
     cursor: pointer;
     font-family: inherit;
     transition: all 0.15s ease;
+    line-height: 1;
   }
   .shell-quicklaunch-btn:hover {
     background: ${t.surface1};
@@ -1002,6 +1003,12 @@ const generateCSS = (config) => {
   }
   .shell-quicklaunch-btn-icon {
     font-size: 16px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
   }
 
   /* Scrollbar */
