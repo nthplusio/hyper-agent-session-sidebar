@@ -700,6 +700,7 @@ const generateCSS = (config) => {
   .session-shell-icon svg {
     width: 14px;
     height: 14px;
+    stroke-width: 2.5;
   }
   .session-title {
     flex: 1;
@@ -1037,13 +1038,13 @@ const generateCSS = (config) => {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 18px;
-    height: 18px;
+    width: 22px;
+    height: 22px;
   }
   .shell-quicklaunch-btn-icon svg {
-    width: 18px;
-    height: 18px;
-    stroke-width: 2;
+    width: 22px;
+    height: 22px;
+    stroke-width: 2.5;
   }
 
   /* Scrollbar */

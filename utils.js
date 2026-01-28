@@ -148,7 +148,7 @@ const shortenPath = (fullPath) => {
 };
 
 // Get shell icon for launcher buttons (uses Lucide SVG icons)
-const getShellIconForLauncher = (shell, size = 16) => {
+const getShellIconForLauncher = (shell, size = 22) => {
   const shellPath = (shell.shell || '').toLowerCase();
   const shellName = (shell.name || '').toLowerCase();
 
