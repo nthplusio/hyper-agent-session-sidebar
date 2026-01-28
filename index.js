@@ -1005,6 +1005,8 @@ const generateCSS = (config) => {
     transform: translate(-50%, -50%);
     font-size: 16px;
     line-height: 1;
+    text-align: center;
+    width: 20px;
   }
 
   /* Scrollbar */
