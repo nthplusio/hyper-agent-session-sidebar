@@ -1094,8 +1094,13 @@ const generateCSS = (config) => {
     gap: 4px;
   }
   .session-sidebar[data-view="compact"] .session-shell-icon {
-    font-size: 12px;
     width: 14px;
+    height: 14px;
+  }
+  .session-sidebar[data-view="compact"] .session-shell-icon svg {
+    width: 14px;
+    height: 14px;
+    stroke-width: 2.5;
   }
   .session-sidebar[data-view="compact"] .session-process-name {
     font-size: 10px;
@@ -1112,6 +1117,17 @@ const generateCSS = (config) => {
   }
   .session-sidebar[data-view="compact"] .session-detail-row {
     font-size: 9px;
+  }
+  .session-sidebar[data-view="compact"] .session-detail-icon,
+  .session-sidebar[data-view="compact"] .session-git-icon {
+    width: 10px;
+    height: 10px;
+  }
+  .session-sidebar[data-view="compact"] .session-detail-icon svg,
+  .session-sidebar[data-view="compact"] .session-git-icon svg {
+    width: 10px;
+    height: 10px;
+    stroke-width: 2.5;
   }
   .session-sidebar[data-view="compact"] .session-git {
     font-size: 9px;
@@ -1141,8 +1157,13 @@ const generateCSS = (config) => {
     gap: 4px;
   }
   .session-sidebar[data-view="micro"] .session-shell-icon {
-    font-size: 11px;
     width: 12px;
+    height: 12px;
+  }
+  .session-sidebar[data-view="micro"] .session-shell-icon svg {
+    width: 12px;
+    height: 12px;
+    stroke-width: 2.5;
   }
   .session-sidebar[data-view="micro"] .session-title {
     gap: 4px;
