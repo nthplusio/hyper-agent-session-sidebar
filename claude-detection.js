@@ -28,7 +28,7 @@
 const CLAUDE_ASSISTANT = {
   id: 'claude',
   name: 'Claude Code',
-  icon: '✦',
+  icon: '\ueb99',  // Nerd Font robot/hubot icon ()
 
   // Braille spinner characters used by Claude Code
   spinnerChars: ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'],

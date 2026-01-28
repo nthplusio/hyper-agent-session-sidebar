@@ -59,7 +59,7 @@ const defaultConfig = {
   showCwd: true,
   showShellLauncher: true,
   showPid: true,
-  activityTimeout: 3000, // ms to show activity indicator
+  activityTimeout: 1500, // ms to show activity indicator
   opacity: 0.9,
   opacityHover: 1,
   // View mode: 'default' | 'compact' | 'micro'
