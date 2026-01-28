@@ -969,49 +969,39 @@ const generateCSS = (config) => {
     opacity: 0.6;
   }
 
-  /* Quick Launch Bar */
+  /* Quick Launch Bar - Ghost icon buttons */
   .shell-quicklaunch {
     display: flex;
-    gap: 4px;
-    padding: 8px;
-    background: ${t.surfaceDark};
+    gap: 6px;
+    padding: 6px 8px;
+    background: transparent;
     border-bottom: 1px solid ${t.border};
   }
   .shell-quicklaunch-btn {
-    flex: 1;
     display: flex;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 2px;
-    padding: 6px 4px;
+    width: 28px;
+    height: 28px;
+    padding: 0;
     border-radius: 6px;
-    background: ${t.surface1}80;
+    background: transparent;
     border: 1px solid transparent;
-    color: ${t.foreground};
+    color: ${t.subtext};
     cursor: pointer;
-    font-size: 10px;
     font-family: inherit;
     transition: all 0.15s ease;
   }
   .shell-quicklaunch-btn:hover {
-    background: ${t.surface2};
-    border-color: ${t.blue}40;
+    background: ${t.surface1};
+    color: ${t.foreground};
+    border-color: ${t.surface2};
   }
   .shell-quicklaunch-btn:active {
-    background: ${t.surface1};
+    background: ${t.surface2};
   }
   .shell-quicklaunch-btn-icon {
     font-size: 16px;
-    flex-shrink: 0;
-    min-width: 16px;
-    text-align: center;
-  }
-  .shell-quicklaunch-btn-label {
-    font-size: 8px;
-    color: ${t.subtext};
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
   }
 
   /* Scrollbar */
@@ -1712,8 +1702,6 @@ exports.decorateHyper = (Hyper, { React }) => {
         { className: 'shell-quicklaunch' },
         shells.map((shell, index) => {
           const iconInfo = this.getShellIconForLauncher(shell);
-          // Get short label (first word or abbreviation)
-          const shortLabel = shell.name.split(' ')[0];
           const shortcutHint = keymapPrefix && shell.shortcut ? ` (${keymapPrefix}+${shell.shortcut})` : '';
           return React.createElement(
             'button',
@@ -1721,15 +1709,12 @@ exports.decorateHyper = (Hyper, { React }) => {
               key: index,
               className: 'shell-quicklaunch-btn',
               onClick: () => this.openShellTab(shell),
-              title: `Open new ${shell.name} tab${shortcutHint}`
+              title: `${shell.name}${shortcutHint}`
             },
             React.createElement('span', {
               className: 'shell-quicklaunch-btn-icon',
               style: { color: iconInfo.color }
-            }, iconInfo.icon),
-            React.createElement('span', {
-              className: 'shell-quicklaunch-btn-label'
-            }, shortLabel)
+            }, iconInfo.icon)
           );
         })
       );

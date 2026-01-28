@@ -130,10 +130,13 @@ const shortenPath = (fullPath) => {
 // Get shell icon for launcher buttons
 const getShellIconForLauncher = (shell) => {
   const shellPath = (shell.shell || '').toLowerCase();
+  const shellName = (shell.name || '').toLowerCase();
+
   if (shellPath.includes('powershell') || shellPath.includes('pwsh')) {
     return shellIcons.powershell;
   }
-  if (shellPath.includes('bash')) {
+  // Git Bash - use bash icon with git-bash green
+  if (shellPath.includes('git') || shellName.includes('git') || shellPath.includes('bash')) {
     return shellIcons.bash;
   }
   if (shellPath.includes('cmd')) {
