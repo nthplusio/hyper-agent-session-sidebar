@@ -63,7 +63,7 @@ const defaultConfig = {
   opacity: 0.9,
   opacityHover: 1,
   // View mode: 'default' | 'compact' | 'micro'
-  viewMode: 'default',
+  viewMode: 'compact',
   // Activity detection options
   enableClaudeDetection: true,   // Auto-detect Claude Code sessions
   claudeIdleTimeout: 5000,       // ms before working -> waiting transition
@@ -1525,7 +1525,7 @@ exports.decorateHyper = (Hyper, { React }) => {
       super(props);
       // Get initial view mode from config
       const sidebarConfig = (window.config && window.config.getConfig && window.config.getConfig().sessionSidebar) || {};
-      const initialViewMode = sidebarConfig.viewMode || 'default';
+      const initialViewMode = sidebarConfig.viewMode || 'compact';
       this.state = {
         sessions: {},
         activeUid: null,
