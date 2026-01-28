@@ -267,8 +267,11 @@ const getActivityGlyph = (session) => {
     title = outputTypeLabels[outputType] || title;
   }
 
+  // Use star icon instead of CSS dot
+  className += ' star';
+
   return {
-    icon: null,  // CSS dot
+    icon: '✦',
     className,
     title,
     style: {},

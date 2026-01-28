@@ -737,43 +737,34 @@ const generateCSS = (config) => {
   }
 
   /* ═══════════════════════════════════════════════════════════════
-     ACTIVITY GLYPHS - Visual indicators for session state
+     ACTIVITY GLYPHS - Star indicators for session state
      ═══════════════════════════════════════════════════════════════ */
 
-  /* Base glyph styles - colored dot for standard terminals */
+  /* Base glyph styles - star icon for all sessions */
   .activity-glyph {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
     flex-shrink: 0;
     margin-left: auto;
+    font-size: 12px;
+    line-height: 1;
   }
 
-  /* Standard terminal states */
-  .activity-glyph.running {
-    background: ${t.green};
+  /* Standard terminal states (star icon) */
+  .activity-glyph.star.running {
+    color: ${t.green};
     animation: glyph-pulse 1s ease-in-out infinite;
-    box-shadow: 0 0 4px ${t.green}80;
+    text-shadow: 0 0 6px ${t.green}80;
   }
-  .activity-glyph.has-output {
-    background: ${t.cyan};
+  .activity-glyph.star.has-output {
+    color: ${t.cyan};
     animation: glyph-fade 2s ease-out;
+    text-shadow: 0 0 4px ${t.cyan}60;
   }
-  .activity-glyph.inactive {
-    background: ${t.overlay};
+  .activity-glyph.star.inactive {
+    color: ${t.overlay};
     opacity: 0.4;
   }
 
-  /* Claude glyph - uses icon instead of dot */
-  .activity-glyph.claude {
-    width: auto;
-    height: auto;
-    background: none !important;
-    font-size: 12px;
-    line-height: 1;
-    border-radius: 0;
-    box-shadow: none;
-  }
+  /* Claude/AI assistant glyph states */
   .activity-glyph.claude.working {
     color: ${t.green};
     animation: glyph-pulse 1s ease-in-out infinite;
@@ -813,8 +804,8 @@ const generateCSS = (config) => {
 
   /* Error output - red glow */
   .activity-glyph.output-error {
-    background: ${t.red} !important;
-    box-shadow: 0 0 6px ${t.red}80, 0 0 2px ${t.red};
+    color: ${t.red} !important;
+    text-shadow: 0 0 6px ${t.red}80, 0 0 2px ${t.red};
     animation: glyph-pulse 0.8s ease-in-out infinite;
   }
   .session-item.output-error {
@@ -826,8 +817,8 @@ const generateCSS = (config) => {
 
   /* Warning output - yellow/amber glow */
   .activity-glyph.output-warning {
-    background: ${t.yellow} !important;
-    box-shadow: 0 0 5px ${t.yellow}70;
+    color: ${t.yellow} !important;
+    text-shadow: 0 0 5px ${t.yellow}70;
     animation: glyph-pulse 1s ease-in-out infinite;
   }
   .session-item.output-warning {
@@ -839,8 +830,8 @@ const generateCSS = (config) => {
 
   /* Success output - green glow */
   .activity-glyph.output-success {
-    background: ${t.green} !important;
-    box-shadow: 0 0 5px ${t.green}70;
+    color: ${t.green} !important;
+    text-shadow: 0 0 5px ${t.green}70;
   }
   .session-item.output-success {
     border-left-color: ${t.green} !important;
@@ -851,8 +842,8 @@ const generateCSS = (config) => {
 
   /* Progress output - cyan pulse */
   .activity-glyph.output-progress {
-    background: ${t.cyan} !important;
-    box-shadow: 0 0 4px ${t.cyan}60;
+    color: ${t.cyan} !important;
+    text-shadow: 0 0 4px ${t.cyan}60;
     animation: glyph-pulse 1.2s ease-in-out infinite;
   }
   .session-item.output-progress {
@@ -1096,10 +1087,6 @@ const generateCSS = (config) => {
     display: none;
   }
   .session-sidebar[data-view="compact"] .activity-glyph {
-    width: 6px;
-    height: 6px;
-  }
-  .session-sidebar[data-view="compact"] .activity-glyph.claude {
     font-size: 10px;
   }
   .session-sidebar[data-view="compact"] .activity-intensity-bar {
@@ -1163,10 +1150,6 @@ const generateCSS = (config) => {
     padding-top: 4px;
   }
   .session-sidebar[data-view="micro"] .activity-glyph {
-    width: 5px;
-    height: 5px;
-  }
-  .session-sidebar[data-view="micro"] .activity-glyph.claude {
     font-size: 9px;
   }
   .session-sidebar[data-view="micro"] .activity-intensity-bar {
