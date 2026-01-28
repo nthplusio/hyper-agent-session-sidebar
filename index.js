@@ -1003,10 +1003,13 @@ const generateCSS = (config) => {
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    font-size: 16px;
-    line-height: 1;
-    text-align: center;
-    width: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .shell-quicklaunch-btn-icon svg {
+    width: 16px;
+    height: 16px;
   }
 
   /* Scrollbar */
@@ -1702,12 +1705,28 @@ exports.decorateHyper = (Hyper, { React }) => {
         return null;
       }
 
+      const utils = getUtils();
+
       return React.createElement(
         'div',
         { className: 'shell-quicklaunch' },
         shells.map((shell, index) => {
           const iconInfo = this.getShellIconForLauncher(shell);
           const shortcutHint = keymapPrefix && shell.shortcut ? ` (${keymapPrefix}+${shell.shortcut})` : '';
+          const isSvg = utils.isSvgIcon && utils.isSvgIcon(iconInfo.icon);
+
+          // Render SVG icon or text icon
+          const iconElement = isSvg
+            ? React.createElement('span', {
+                className: 'shell-quicklaunch-btn-icon',
+                style: { color: iconInfo.color },
+                dangerouslySetInnerHTML: { __html: utils.getSvgMarkup(iconInfo.icon, 16) }
+              })
+            : React.createElement('span', {
+                className: 'shell-quicklaunch-btn-icon',
+                style: { color: iconInfo.color }
+              }, iconInfo.icon);
+
           return React.createElement(
             'button',
             {
@@ -1716,10 +1735,7 @@ exports.decorateHyper = (Hyper, { React }) => {
               onClick: () => this.openShellTab(shell),
               title: `${shell.name}${shortcutHint}`
             },
-            React.createElement('span', {
-              className: 'shell-quicklaunch-btn-icon',
-              style: { color: iconInfo.color }
-            }, iconInfo.icon)
+            iconElement
           );
         })
       );

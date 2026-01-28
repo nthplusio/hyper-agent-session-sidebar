@@ -18,18 +18,70 @@ try {
 // Legacy alias
 const claudeDetection = aiDetection;
 
-// Shell icon mapping (Nerd Font icons)
+// Shell icon mapping - SVG icons for reliable rendering
+// SVG paths are from Lucide/Feather or custom designed
 const shellIcons = {
-  powershell: { icon: '\uebc7', color: '#5391FE' },  //  blue
-  pwsh: { icon: '\uebc7', color: '#5391FE' },        //  blue
-  bash: { icon: '\ue795', color: '#89e051' },        //  green
-  zsh: { icon: '\ue795', color: '#89e051' },         //  green
-  fish: { icon: '\uf489', color: '#fab387' },        //  orange
-  cmd: { icon: '\uebc4', color: '#cdd6f4' },         //  white
-  node: { icon: '\ue718', color: '#8CC84B' },        //  node green
-  python: { icon: '\ue73c', color: '#FFD43B' },      //  python yellow
-  ruby: { icon: '\ue791', color: '#CC342D' },        //  ruby red
-  default: { icon: '\uf489', color: '#89b4fa' },     //  blue
+  powershell: {
+    icon: 'svg:terminal',
+    color: '#5391FE'
+  },
+  pwsh: {
+    icon: 'svg:terminal',
+    color: '#5391FE'
+  },
+  bash: {
+    icon: 'svg:terminal',
+    color: '#89e051'
+  },
+  zsh: {
+    icon: 'svg:terminal',
+    color: '#89e051'
+  },
+  fish: {
+    icon: 'svg:terminal',
+    color: '#fab387'
+  },
+  cmd: {
+    icon: 'svg:terminal-square',
+    color: '#cdd6f4'
+  },
+  node: {
+    icon: 'svg:hexagon',
+    color: '#8CC84B'
+  },
+  python: {
+    icon: 'svg:code',
+    color: '#FFD43B'
+  },
+  ruby: {
+    icon: 'svg:gem',
+    color: '#CC342D'
+  },
+  default: {
+    icon: 'svg:terminal',
+    color: '#89b4fa'
+  },
+};
+
+// SVG icon definitions (Lucide-style, 24x24 viewBox)
+const svgIcons = {
+  'terminal': '<path d="M4 17l6-6-6-6M12 19h8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>',
+  'terminal-square': '<rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" stroke-width="2" fill="none"/><path d="M7 15l4-4-4-4M13 15h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>',
+  'hexagon': '<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" stroke="currentColor" stroke-width="2" fill="none"/>',
+  'code': '<polyline points="16 18 22 12 16 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/><polyline points="8 6 2 12 8 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>',
+  'gem': '<path d="M6 3h12l4 6-10 13L2 9z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M12 22V9M2 9h20M6 3l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>',
+  'robot': '<rect x="3" y="11" width="18" height="10" rx="2" stroke="currentColor" stroke-width="2" fill="none"/><circle cx="12" cy="5" r="2" stroke="currentColor" stroke-width="2" fill="none"/><path d="M12 7v4M8 16h0M16 16h0" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/>',
+};
+
+// Helper to check if icon is SVG type
+const isSvgIcon = (icon) => icon && icon.startsWith('svg:');
+
+// Get SVG markup for an icon
+const getSvgMarkup = (iconKey, size = 16) => {
+  const key = iconKey.replace('svg:', '');
+  const path = svgIcons[key];
+  if (!path) return null;
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">${path}</svg>`;
 };
 
 // Claude orange color (matches the Claude crab)
@@ -313,6 +365,9 @@ const getActivityTypeInfo = (activityType) => {
 
 module.exports = {
   shellIcons,
+  svgIcons,
+  isSvgIcon,
+  getSvgMarkup,
   getShellInfo,
   getProcessName,
   shortenPath,
