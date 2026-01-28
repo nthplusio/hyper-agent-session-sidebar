@@ -32,22 +32,17 @@ const shellIcons = {
   default: { icon: '\uf489', color: '#89b4fa' },     //  blue
 };
 
+// Claude orange color (matches the Claude crab)
+const CLAUDE_ORANGE = '#f5a623';
+
 // Get shell icon and color based on shell path, title, or AI assistant detection
 const getShellInfo = (session) => {
-  // Check if this is an AI assistant session - show robot icon
-  if (aiDetection.isAIAssistantSession && aiDetection.isAIAssistantSession(session)) {
-    const assistantId = session.aiAssistantId || 'claude';
-    const assistant = aiDetection.ASSISTANT_MAP && aiDetection.ASSISTANT_MAP[assistantId];
-    if (assistant) {
-      // Get state-based color for the robot icon
-      const state = session.claudeState || 'idle';
-      const stateInfo = aiDetection.getAssistantStateInfo
-        ? aiDetection.getAssistantStateInfo(state, assistantId)
-        : { color: '#f5a623' };
-      return { icon: assistant.icon, color: stateInfo.color };
-    }
-    // Fallback for Claude detection without full assistant info
-    return { icon: '\ueb99', color: '#f5a623' };  // Robot icon, orange
+  // Check if this is an AI assistant session - show robot icon with orange color
+  const isAI = session.claudeDetected || session.aiAssistantId ||
+    (aiDetection.isAIAssistantSession && aiDetection.isAIAssistantSession(session));
+
+  if (isAI) {
+    return { icon: '\ueb99', color: CLAUDE_ORANGE };  // Robot icon, Claude orange
   }
 
   const shell = (session.shell || '').toLowerCase();
@@ -223,9 +218,8 @@ const getActivityGlyph = (session) => {
   }
 
   // Check if this is an AI assistant session (Claude, Cursor, etc.)
-  const isAI = aiDetection.isAIAssistantSession
-    ? aiDetection.isAIAssistantSession(session)
-    : aiDetection.isClaudeCodeSession(session);
+  const isAI = session.claudeDetected || session.aiAssistantId ||
+    (aiDetection.isAIAssistantSession && aiDetection.isAIAssistantSession(session));
 
   if (isAI) {
     const assistantId = session.aiAssistantId || 'claude';
@@ -238,9 +232,10 @@ const getActivityGlyph = (session) => {
       ? aiDetection.ASSISTANT_MAP[assistantId].name
       : 'Claude';
 
+    // Use star icon (not robot - robot is for shell icon)
     return {
-      icon: stateInfo.icon,
-      className: `activity-glyph claude ${session.claudeState || 'idle'}`,
+      icon: '✦',
+      className: `activity-glyph star claude ${session.claudeState || 'idle'}`,
       title: `${assistantName}: ${stateInfo.label}`,
       style: { color: stateInfo.color },
     };
