@@ -978,9 +978,6 @@ const generateCSS = (config) => {
     border-bottom: 1px solid ${t.border};
   }
   .shell-quicklaunch-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
     width: 28px;
     height: 28px;
     padding: 0;
@@ -991,7 +988,7 @@ const generateCSS = (config) => {
     cursor: pointer;
     font-family: inherit;
     transition: all 0.15s ease;
-    line-height: 1;
+    position: relative;
   }
   .shell-quicklaunch-btn:hover {
     background: ${t.surface1};
@@ -1002,13 +999,12 @@ const generateCSS = (config) => {
     background: ${t.surface2};
   }
   .shell-quicklaunch-btn-icon {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
     font-size: 16px;
     line-height: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 100%;
-    height: 100%;
   }
 
   /* Scrollbar */
