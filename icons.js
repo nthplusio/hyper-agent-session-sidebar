@@ -184,10 +184,15 @@ function getIconSvg(name, size = 16, attrs = {}) {
     ...attrs,
   };
 
+  // SVG attributes that must preserve their exact casing
+  const preserveCase = ['viewBox', 'xmlns'];
+
   const attrString = Object.entries(mergedAttrs)
     .map(([k, v]) => {
-      // Convert camelCase to kebab-case for SVG attributes
-      const key = k.replace(/([A-Z])/g, '-$1').toLowerCase();
+      // Preserve case for special SVG attributes, convert others to kebab-case
+      const key = preserveCase.includes(k)
+        ? k
+        : k.replace(/([A-Z])/g, '-$1').toLowerCase();
       return `${key}="${v}"`;
     })
     .join(' ');
